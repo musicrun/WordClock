@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Word Clock</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+        :root {
+            --background-color: #121212; --container-bg: #1A1A1A; --inactive-text-color: #3A3A3A;
+            --active-text-color: #00FF7F; --glow-color: rgba(0, 255, 127, 0.7); --footer-color: #555;
+        }
+        body {
+            font-family: 'Share Tech Mono', monospace; background-color: var(--background-color); color: white;
+            display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; flex-direction: column;
+        }
+        .clock-container {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: var(--container-bg); padding: 2.5rem; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+        }
+        #grid-container {
+            display: grid; grid-template-columns: repeat(11, auto); gap: 10px 18px;
+            font-size: 2rem; font-weight: bold; letter-spacing: 4px; text-align: center;
+        }
+        @media (max-width: 800px) { #grid-container { font-size: 1.5rem; letter-spacing: 2px; gap: 8px 12px; } }
+        #grid-container span { color: var(--inactive-text-color); transition: color 0.5s ease-in-out, text-shadow 0.5s ease-in-out; }
+        #grid-container span.active { color: var(--active-text-color); text-shadow: 0 0 5px var(--glow-color), 0 0 10px var(--glow-color); }
+        #minute-dots { display: flex; gap: 15px; margin-top: 25px; }
+        .dot { width: 15px; height: 15px; background-color: var(--inactive-text-color); border-radius: 50%; transition: all 0.5s ease-in-out; }
+        .dot.active { background-color: var(--active-text-color); box-shadow: 0 0 5px var(--glow-color), 0 0 10px var(--glow-color); }
+        footer { position: absolute; bottom: 1rem; color: var(--footer-color); font-size: 0.9rem; display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 1; }
+        #change-tz-button {
+            font-family: 'Share Tech Mono', monospace; background: none; border: 1px solid var(--footer-color);
+            color: var(--footer-color); padding: 5px 10px; border-radius: 5px; cursor: pointer; transition: all 0.3s ease;
+        }
+        #change-tz-button:hover { color: var(--active-text-color); border-color: var(--active-text-color); }
+        #tz-modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(5px); display: none; align-items: center; justify-content: center; z-index: 100;
+        }
+        .tz-modal-content { background: var(--container-bg); padding: 2rem 3rem; border-radius: 15px; text-align: center; box-shadow: 0 0 40px rgba(0,0,0,0.5); }
+        .tz-modal-content h2 { margin-top: 0; }
+        #tz-select { width: 100%; padding: 12px; font-family: 'Share Tech Mono', monospace; background: var(--background-color); color: #fff; border: 1px solid #333; border-radius: 5px; font-size: 1rem; margin: 1rem 0; }
+        #save-tz-button {
+            width: 100%; padding: 12px; background-color: var(--active-text-color); color: var(--background-color);
+            border: none; border-radius: 5px; font-size: 1.1rem; font-weight: bold; cursor: pointer; transition: background-color 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="clock-container">
+        <div id="grid-container"></div>
+        <div id="minute-dots">
+            <div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        </div>
+    </div>
+    <footer>
+        <button id="change-tz-button" style="display: none;">Change Timezone</button>
+        <p>made by musicruneiii on discord</p>
+    </footer>
+    <div id="tz-modal">
+        <div class="tz-modal-content">
+            <h2>Select Your Timezone</h2>
+            <p>This will be saved for your next visit.</p>
+            <select id="tz-select"></select>
+            <button id="save-tz-button">Save and Start</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const gridContainer = document.getElementById('grid-container');
+            const minuteDots = document.querySelectorAll('.dot');
+            const tzModal = document.getElementById('tz-modal');
+            const tzSelect = document.getElementById('tz-select');
+            const saveTzButton = document.getElementById('save-tz-button');
+            const changeTzButton = document.getElementById('change-tz-button');
+            
+            const layout = ["ITLISASAMPM", "ACQUARTERDC", "TWENTYFIVEX", "HALFSTENFTO", "PASTERUNINE", "ONESIXTHREE", "FOURFIVETWO", "EIGHTELEVEN", "SEVENTWELVE", "TENSEOCLOCK"];
+            const wordMap = {
+                'it':[[0,0,1]],'is':[[0,3,4]],'a':[[1,0,0]],'quarter':[[1,2,8]],'twenty':[[2,0,5]],'five_min':[[2,6,9]],'half':[[3,0,3]],'ten_min':[[3,5,7]],'to':[[3,9,10]],'past':[[4,0,3]],'nine':[[4,7,10]],'one':[[5,0,2]],'six':[[5,3,5]],'three':[[5,6,10]],'four':[[6,0,3]],'five_hour':[[6,4,7]],'two':[[6,8,10]],'eight':[[7,0,4]],'eleven':[[7,5,10]],'seven':[[8,0,4]],'twelve':[[8,5,10]],'ten_hour':[[9,0,2]],'oclock':[[9,5,10]],'am':[[0,7,8]],'pm':[[0,9,10]]
+            };
+
+            let userTimezone = null;
+            let clockInterval = null;
+
+            function initGrid() {
+                gridContainer.innerHTML = '';
+                layout.forEach(rowStr => {
+                    rowStr.split('').forEach(letter => {
+                        const span = document.createElement('span');
+                        span.textContent = letter;
+                        gridContainer.appendChild(span);
+                    });
+                });
+            }
+
+            function lightUp(words, dots) {
+                const activeIndices = new Set();
+                words.forEach(word => {
+                    if (!wordMap[word]) return;
+                    wordMap[word].forEach(([row, start, end]) => {
+                        for (let i = start; i <= end; i++) activeIndices.add(row * 11 + i);
+                    });
+                });
+
+                gridContainer.childNodes.forEach((span, i) => {
+                    span.classList.toggle('active', activeIndices.has(i));
+                });
+                minuteDots.forEach((dot, i) => dot.classList.toggle('active', i < dots));
+            }
+
+            // REBUILT with native browser features - NO EXTERNAL LIBRARY NEEDED
+            function getTimeInTimezone(timezone) {
+                try {
+                    const timeString = new Date().toLocaleString('en-US', {
+                        timeZone: timezone,
+                        hour12: false,
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                    const [hour, minute] = timeString.split(':').map(Number);
+                    return { hour, minute };
+                } catch (e) {
+                    console.error("Invalid timezone specified:", timezone, e);
+                    return { hour: 0, minute: 0 }; // Fallback
+                }
+            }
+
+            function updateClock() {
+                if (!userTimezone) return;
+                let { hour, minute } = getTimeInTimezone(userTimezone);
+                const words = ['it', 'is', hour >= 12 ? 'pm' : 'am'];
+                
+                let displayHour = hour % 12 || 12; // Convert 24h to 12h, 0 becomes 12
+                
+                if (minute > 34) {
+                    words.push('to');
+                    displayHour = (displayHour % 12) + 1;
+                } else if (minute >= 5) {
+                    words.push('past');
+                } else {
+                    words.push('oclock');
+                }
+                
+                const rounded = Math.round(minute / 5) * 5;
+                if (rounded === 5 || rounded === 55) words.push('five_min');
+                if (rounded === 10 || rounded === 50) words.push('ten_min');
+                if (rounded === 15 || rounded === 45) words.push('a', 'quarter');
+                if (rounded === 20 || rounded === 40) words.push('twenty');
+                if (rounded === 25 || rounded === 35) words.push('twenty', 'five_min');
+                if (rounded === 30) words.push('half');
+
+                const hourWords = {1:'one',2:'two',3:'three',4:'four',5:'five_hour',6:'six',7:'seven',8:'eight',9:'nine',10:'ten_hour',11:'eleven',12:'twelve'};
+                words.push(hourWords[displayHour]);
+
+                lightUp(words, minute % 5);
+            }
+
+            function showTimezoneSelector() {
+                // Uses the browser's built-in list of timezones
+                const timezones = Intl.supportedValuesOf('timeZone');
+                const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                tzSelect.innerHTML = timezones.map(tz =>
+                    `<option value="${tz}" ${tz === browserTz ? 'selected' : ''}>${tz.replace(/_/g, ' ')}</option>`
+                ).join('');
+                tzModal.style.display = 'flex';
+            }
+
+            function startClock(timezone) {
+                userTimezone = timezone;
+                initGrid();
+                tzModal.style.display = 'none';
+                changeTzButton.style.display = 'block';
+                if (clockInterval) clearInterval(clockInterval);
+                updateClock();
+                clockInterval = setInterval(updateClock, 5000);
+            }
+            
+            // --- MAIN EXECUTION ---
+            saveTzButton.addEventListener('click', () => {
+                const selectedTz = tzSelect.value;
+                localStorage.setItem('userTimezone', selectedTz);
+                startClock(selectedTz);
+            });
+            changeTzButton.addEventListener('click', showTimezoneSelector);
+
+            const savedTz = localStorage.getItem('userTimezone');
+            if (savedTz && Intl.supportedValuesOf('timeZone').includes(savedTz)) {
+                startClock(savedTz);
+            } else {
+                showTimezoneSelector();
+            }
+        });
+    </script>
+</body>
+</html>
